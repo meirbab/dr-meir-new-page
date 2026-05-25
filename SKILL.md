@@ -1,10 +1,10 @@
 ---
-name: dr-meir-course-publisher
+name: dr-meir_new_page
 description: End-to-end pipeline that turns medical-aesthetic course material (videos for doctors, usually Russian, sourced from Telegram channels with download restrictions) into Hebrew public-facing content pages on dr-meir.com. Input is a Google Drive folder per course containing video files + a `.txt` transcript file (transcribed externally via TurboScribe.ai). The skill writes an engaging Hebrew article, generates aesthetic-clinic-style supporting images (nano-banana), downloads + cuts higher-resolution reference video clips when available (YouTube), uploads everything to WP, publishes via REST, sets Rank Math SEO + focus keyword via WP-CLI/SSH, submits to Google Indexing (Rank Math Instant Indexing + IndexNow), and deploys bidirectional internal linking via two mu-plugins (bottom callout + inline keyword replacement) that bypass Elementor. Use when user says "פרסם את הקורס", "process course X", "publish from drive folder", "המשך עם הקורס", or provides a Google Drive folder URL/path with course material.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, mcp__claude_ai_Google_Drive__search_files, mcp__claude_ai_Google_Drive__get_file_metadata, mcp__claude_ai_Google_Drive__list_recent_files, mcp__claude_ai_Google_Drive__read_file_content, mcp__nano-banana__generate_image, mcp__nano-banana__edit_image
 ---
 
-# dr-meir-course-publisher — Telegram course → Hebrew dr-meir.com article
+# dr-meir_new_page — Telegram course → Hebrew dr-meir.com article
 
 End-to-end content pipeline. Designed for Dr. Meir Babaev's aesthetic-medicine clinic (dr-meir.com): takes professional course material that the doctor consumes for training, and produces engaging, SEO-optimized public articles for the clinic's website — while preserving topic authority and avoiding direct copying of source material.
 
@@ -330,7 +330,7 @@ When user says "המשך עם הקורס" (continue with this course), read this
 ## Repo layout
 
 ```
-dr-meir-course-publisher/
+dr-meir_new_page/
 ├── SKILL.md                          (this file)
 ├── README.md                         (quick start for humans)
 ├── assets/
