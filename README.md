@@ -1,4 +1,4 @@
-# dr-meir_new_page
+# dr-meir-new-page
 
 End-to-end pipeline that turns medical-aesthetic course material (Telegram-sourced videos transcribed via TurboScribe) into Hebrew public-facing articles on dr-meir.com — with SEO, supporting media, and bidirectional internal linking via two mu-plugins that bypass Elementor.
 
