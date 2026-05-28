@@ -1,6 +1,6 @@
 ---
 name: dr-meir-new-page
-description: End-to-end pipeline that turns medical-aesthetic course material (videos for doctors, usually Russian, sourced from Telegram channels with download restrictions) into Hebrew public-facing content pages on dr-meir.com. Input is a Google Drive folder per course containing video files + a `.txt` transcript file (transcribed externally via TurboScribe.ai). The skill writes an engaging Hebrew article, generates aesthetic-clinic-style supporting images (nano-banana), downloads + cuts higher-resolution reference video clips when available (YouTube), uploads everything to WP, publishes via REST, sets Rank Math SEO + focus keyword via WP-CLI/SSH, submits to Google Indexing (Rank Math Instant Indexing + IndexNow), and deploys bidirectional internal linking via two mu-plugins (bottom callout + inline keyword replacement) that bypass Elementor. Use when user says "פרסם את הקורס", "process course X", "publish from drive folder", "המשך עם הקורס", or provides a Google Drive folder URL/path with course material.
+description: End-to-end pipeline that turns medical-aesthetic course material (videos for doctors, usually Russian, sourced from Telegram channels with download restrictions) into Hebrew public-facing content pages on dr-meir.com. Inputs accepted from two sources in this preference order — (1) MacDroid-mounted Samsung S23+ Telegram cache at `~/Library/CloudStorage/MacDroid-*/storage/emulated/0/Android/data/org.telegram.messenger/files/Telegram/Telegram Video/` (preferred — no upload step), (2) Google Drive folder per course (fallback). Either way, each video must have a matching `.txt` from TurboScribe.ai. The skill writes an engaging Hebrew article, generates aesthetic-clinic-style supporting images (nano-banana), downloads + cuts higher-resolution reference video clips when available (YouTube), uploads everything to WP, publishes via REST, sets Rank Math SEO + focus keyword via WP-CLI/SSH, submits to Google Indexing (Rank Math Instant Indexing + IndexNow), and deploys bidirectional internal linking via two mu-plugins (bottom callout + inline keyword replacement) that bypass Elementor. Use when user says "פרסם את הקורס", "process course X", "publish from phone", "publish from drive folder", "המשך עם הקורס", or provides a path to Telegram course material.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, mcp__claude_ai_Google_Drive__search_files, mcp__claude_ai_Google_Drive__get_file_metadata, mcp__claude_ai_Google_Drive__list_recent_files, mcp__claude_ai_Google_Drive__read_file_content, mcp__nano-banana__generate_image, mcp__nano-banana__edit_image
 ---
 
@@ -28,13 +28,24 @@ End-to-end content pipeline. Designed for Dr. Meir Babaev's aesthetic-medicine c
 
 ## Source profile (memorize)
 
-- **Input format:** Google Drive folder `My Drive/courses/<course-name>/` (or any path). Contains:
-  - One or more `.mp4` video files (course content, usually Russian or English)
-  - One or more `.txt` files (transcripts from TurboScribe.ai — see `~/.claude/projects/-Users-meirbabaev/memory/turboscribe-transcription.md`)
+- **Input — PRIMARY (preferred):** MacDroid-mounted Samsung S23+ Telegram cache at
+  `~/Library/CloudStorage/MacDroid-samsungSM-S916B/storage/emulated/0/Android/data/org.telegram.messenger/files/Telegram/Telegram Video/`
+  (sibling `Telegram Documents/` for PDFs). See `~/.claude/projects/-Users-meirbabaev/memory/macdroid-telegram-paths.md`.
+  - Requires MacDroid app running + phone connected via USB
+  - Bypasses scoped storage that blocks AirDroid/OpenMTP from seeing `/Android/data/`
+  - Files are processed in place — no copy needed
+- **Input — FALLBACK:** Google Drive folder `My Drive/courses/<course-name>/` (when phone unavailable, or user pre-staged there). Contains the same `.mp4` + `.txt` pairs.
+- **Transcript source:** `.txt` files come from TurboScribe.ai (user runs them externally — see `turboscribe-transcription.md`)
 - **Source language:** typically Russian (most doctor courses), occasionally English
 - **Target language:** Hebrew, RTL
 - **Target audience:** general public, dr-meir.com patients (NOT other doctors)
 - **Target site:** dr-meir.com (WordPress + Hello Elementor + Rank Math PRO + WP Rocket — see `dr-meir-com-site.md`)
+
+## Source discovery order (apply in skill Step 1)
+
+1. **Check MacDroid first** — `ls ~/Library/CloudStorage/MacDroid-*/storage/emulated/0/Android/data/org.telegram.messenger/files/Telegram/Telegram\ Video/ 2>/dev/null`. Use glob because mount-name embeds the phone model. If files exist, ask user which course (by recent-modified or by description) and proceed from there.
+2. **Else check Google Drive** — `~/Library/CloudStorage/GoogleDrive-doctor@dr-meir.com/My Drive/courses/<course>/` per old pattern.
+3. **Else ask user** — for the explicit path or course name.
 
 ## Key prior knowledge — DO NOT relitigate
 
@@ -92,18 +103,35 @@ Google Drive: courses/<course-name>/
 
 ## Step-by-step playbook
 
-### Step 1 — Locate Drive assets
+### Step 1 — Locate source assets
 
-Use the Google Drive MCP. Search by course name or list folder:
+**Order of precedence (try each before falling back to the next):**
 
+**A. MacDroid mount (preferred — direct from phone, no upload):**
+```bash
+# Glob because mount-name embeds phone model (currently samsungSM-S916B)
+MACDROID_BASE=$(ls -d ~/Library/CloudStorage/MacDroid-*/storage/emulated/0/Android/data/org.telegram.messenger/files/Telegram 2>/dev/null | head -1)
+if [ -n "$MACDROID_BASE" ]; then
+    ls -la "$MACDROID_BASE/Telegram Video/" 2>/dev/null   # videos
+    ls -la "$MACDROID_BASE/Telegram Documents/" 2>/dev/null  # PDFs etc.
+fi
+```
+If MacDroid is mounted, **show the user the list of recent files and ask which course/file to process**. The `.txt` transcripts are NOT alongside the videos here — user generates them via TurboScribe.ai separately and drops them next to the work directory OR on Drive.
+
+**B. Google Drive (fallback — when user pre-staged):**
 ```python
 # Via Drive MCP
 search_files(query=f"title contains '{course_name}'", pageSize=20)
-# Or list a known folder
 search_files(query=f"parentId = '{folder_id}'", pageSize=50)
 ```
 
-Identify pairs: each `.mp4` should have a sibling `.txt` (TurboScribe transcript). If transcript is missing, **STOP and ask the user to run TurboScribe first** — do not transcribe locally.
+**C. Ask user** for an explicit path.
+
+### Transcript expectations
+
+- A `.txt` from TurboScribe is required for content writing. Each `.mp4` should have a sibling/companion `.txt` SOMEWHERE the user points us to.
+- If transcript is missing, **STOP and ask the user to run TurboScribe first** — do not transcribe locally.
+- For MacDroid sources, the user typically uploads the video to TurboScribe, downloads the `.txt`, and either places it in the same work folder OR shares it via Drive.
 
 ### Step 2 — Set up local working dir
 

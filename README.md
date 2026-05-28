@@ -17,9 +17,13 @@ or English:
 
 The skill expects:
 
-1. A Google Drive folder under `My Drive/courses/<course-name>/`
+1. A source folder with course videos — one of:
+   - **Preferred:** MacDroid-mounted Telegram cache at
+     `~/Library/CloudStorage/MacDroid-*/storage/emulated/0/Android/data/org.telegram.messenger/files/Telegram/Telegram Video/`
+     (USB-direct from phone, no upload step)
+   - **Fallback:** Google Drive folder under `My Drive/courses/<course-name>/`
 2. At least one `.mp4` (Telegram-sourced course video)
-3. A matching `.txt` next to it (transcript from TurboScribe.ai — do this externally first)
+3. A matching `.txt` (transcript from TurboScribe.ai — generate externally first; point us at it)
 
 It produces:
 
