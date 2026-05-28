@@ -103,6 +103,21 @@ Google Drive: courses/<course-name>/
 
 ## Step-by-step playbook
 
+### Step 0 — Duplicate-content check (MANDATORY before any transcription work)
+
+**Why this exists:** Telegram message_id is NOT a stable identifier for a video. The same source video can appear in the user's Telegram cache under DIFFERENT file IDs (e.g., `2_5285506910462687404.mp4` and `2_5285506910462687410.mp4` were the SAME Buyanova module 1 video — once on May 24, once on May 28 — caused by the user re-watching or the channel re-posting). A different file ID does NOT mean different content.
+
+**Failure mode learned 2026-05-28:** I uploaded `..410.mp4` to TurboScribe without checking existing transcripts. After ~12 minutes of upload + transcription, content turned out identical to `..404.mp4` already published at /aesthetics/hyaluronic-acid-complete-guide-fillers-mesotherapy/. Wasted user time and produced duplicate clutter in TurboScribe library.
+
+**Rule:** Before clicking TRANSCRIBE in TurboScribe (or any equivalent), do ALL of:
+
+1. **Duration match:** read the duration of the new file (`ffprobe -show_entries format=duration`). Then check `~/Telegram-Material/work/*/published.json` for any existing course with a video of duration within ±90 seconds. If a match exists, STOP and ask user: "Found `<existing-course>` (post #<id>) with video of same duration — is this the same content?"
+2. **TurboScribe history check:** when the upload dialog is open, the dashboard list is still visible. Read the durations of recent files (especially in topic-related folders). If any match the new file's duration within ±90s, STOP and ask the same question.
+3. **Folder hint:** if the user has a TurboScribe folder name that already contains the file ID family (e.g., `הרב עמרמי` folder containing `...404`), and the new file ID is in the same family (`...410` differs only in last 3 digits, OR same date range), flag it.
+4. **First-page-of-transcript spot check:** if uncertain after the above, after transcription finishes, read the first paragraph of the new `.txt` and grep `~/Telegram-Material/work/*/transcripts/*.txt` (or the assets folder of the skill) for a near-duplicate first sentence before continuing to the writing step.
+
+When in doubt, ASK BEFORE TRANSCRIBING. Re-transcription is harmless (free on user's unlimited plan) but re-publication or re-spending tokens on writing is not.
+
 ### Step 1 — Locate source assets
 
 **Order of precedence (try each before falling back to the next):**
