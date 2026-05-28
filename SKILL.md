@@ -144,9 +144,78 @@ search_files(query=f"parentId = '{folder_id}'", pageSize=50)
 
 ### Transcript expectations
 
-- A `.txt` from TurboScribe is required for content writing. Each `.mp4` should have a sibling/companion `.txt` SOMEWHERE the user points us to.
-- If transcript is missing, **STOP and ask the user to run TurboScribe first** — do not transcribe locally.
-- For MacDroid sources, the user typically uploads the video to TurboScribe, downloads the `.txt`, and either places it in the same work folder OR shares it via Drive.
+- A `.txt` from TurboScribe is required for content writing.
+- **Preferred: skill runs TurboScribe automatically via `agent-browser`** — see "TurboScribe via agent-browser" section below. This is the proven path (validated 2026-05-28 on file ..427).
+- Fallback: if `agent-browser` is unavailable, ask the user to run TurboScribe manually and place the `.txt` in the work folder.
+- DO NOT try to transcribe locally (Whisper etc.) — user has paid TurboScribe unlimited (`turboscribe-transcription.md`) and it produces better Russian output for these courses.
+
+### Step 1.5 — TurboScribe transcription via agent-browser (validated workflow)
+
+TurboScribe is protected by **Cloudflare Bot Management**. A vanilla Playwright/Chromium browser session gets stuck on the "Verifying you are human" challenge forever.
+
+**The fix: launch agent-browser with the user's real Chrome `Default` profile** — Playwright clones the Default profile cookies + Cloudflare clearance + TurboScribe login into a temp Chrome instance, so the dashboard loads on first attempt.
+
+**Prereqs (one-time):**
+- `agent-browser` CLI installed (`npm install -g agent-browser` + `npx playwright install chromium`)
+- User has signed in to TurboScribe in their real Chrome Default profile at least once
+- The user's Chrome can be open or closed — Playwright copies the profile into a temp dir, no lock conflict
+
+**The full sequence:**
+
+```bash
+# 1) Open dashboard. The first call also pre-warms cookies.
+agent-browser --profile Default --headed open https://turboscribe.ai/dashboard
+sleep 6
+# Verify: get title should return "Recent Files | TurboScribe", not "Just a moment..."
+agent-browser get title
+
+# 2) Click the top-right TRANSCRIBE FILES button (opens upload dialog)
+agent-browser click @e6   # ref is stable across sessions for this button
+
+# 3) Upload the video file directly to the hidden <input type=file>
+agent-browser upload 'input[type=file]' "$PROJ/video/<file>.mp4"
+
+# 4) Poll upload progress with a SCOPED query (don't match the % from prior in-flight transcriptions)
+# Upload of a 250MB file takes 3-6 min on home fiber. Wait for the file card to show blue ✓ check.
+# At that point, the BLUE "TRANSCRIBE" submit button at the bottom of the dialog becomes active.
+
+# 5) Click submit by REF (agent-browser snapshot -i ⇒ look for `button "TRANSCRIBE" [ref=eN]`).
+# DO NOT match by JS textContent === 'TRANSCRIBE' — the button text is CSS-uppercased
+# and JS reads it as "Transcribe", so a strict === comparison silently fails.
+# Take a snapshot AFTER upload-complete and use the ref shown:
+agent-browser snapshot -i | grep -B0 'TRANSCRIBE'
+agent-browser click @eN   # whatever ref the snapshot shows for the dialog submit button
+
+# 6) Poll transcription status (39-min Russian Whale finishes in ~6 min on TurboScribe Paid Unlimited).
+#    Use snapshot or `eval` to check the row status on the dashboard:
+agent-browser eval "(() => {
+  const r = Array.from(document.querySelectorAll('tr, [class*=row]')).find(x => x.textContent.includes('<FILE_ID>'));
+  if (!r) return 'row not found';
+  if (r.querySelector('svg[class*=green], .text-green, [class*=success]')) return 'COMPLETE';
+  return 'processing';
+})()"
+
+# 7) Download the .txt via authenticated fetch (avoids browser download dialog).
+TXT_URL=$(agent-browser eval "(() => { const links = Array.from(document.querySelectorAll('a')); const t = links.find(a => a.textContent.includes('Download TXT')); return t ? t.href : ''; })()" | tr -d '"')
+agent-browser eval "(async () => {
+  const r = await fetch('$TXT_URL', {credentials:'include'});
+  return await r.text();
+})()" > /tmp/transcript-raw.txt
+# Strip agent-browser's JSON wrapper:
+python3 -c "import json; t=open('/tmp/transcript-raw.txt').read().strip(); open('$PROJ/transcript/<file>.txt','w').write(json.loads(t))"
+
+# 8) Close the browser
+agent-browser close
+```
+
+**Critical pitfalls learned the hard way:**
+
+1. **Don't use Chromium-bundled (default) — it's blocked by Cloudflare forever.** Always pass `--profile Default`.
+2. **Don't rely on JS `textContent === 'TRANSCRIBE'`** — CSS uppercase trick makes it return "Transcribe". Use the snapshot ref `@eN` instead.
+3. **Don't forget to click submit after upload completes.** The dialog will auto-close after a few minutes of inactivity, leaving the file uploaded but NOT queued for transcription. Verified failure on file ..410. After file shows blue ✓ check, click TRANSCRIBE within ~60 seconds.
+4. **Don't use generic JS queries that match in-flight rows.** When polling, scope queries to the SPECIFIC file ID being uploaded — `5285506910462687427`, not loose patterns like `\d+%` which accidentally pick up `41` from a previous file becoming `"4100%"`.
+5. **Daemon stability**: agent-browser daemon can get stuck if rapid sequential commands hit it. If you see "Resource temporarily unavailable", `kill -9` the daemon pid and re-`open`.
+6. **agent-browser ref `@e6` for top-right TRANSCRIBE FILES** is the dialog opener; **ref `@eN` (snapshot to find)** is the dialog SUBMIT — they're different. The user-clicked the wrong one in early debug sessions.
 
 ### Step 2 — Set up local working dir
 
@@ -347,6 +416,11 @@ Confirm the new pillar article itself shows ZERO inbound markers (self-link is b
 5. **Elementor target posts have empty `content` field in REST** — direct edits to inject inbound links would require touching `_elementor_data` (RISKY, see chin-template batch artifact memory). USE the mu-plugins instead.
 6. **Link Genius preview-then-execute is BROKEN** — preview reports 214 opportunities but execute returns "no_results_found". Don't waste time. Use the mu-plugins.
 7. **`source` doesn't propagate env to Python** — use `set -a; source ...; set +a` to export everything.
+8. **PHP map duplicate keys — silent overwrite (2026-05-28).** When updating `dm-related-links.php`, each `source_post_id` can be a key ONLY ONCE. PHP arrays use last-assignment-wins, so adding `49022 => 53640` when `49022 => 53084` already exists below it makes the NEW entry silently disappear. **Before adding callout source IDs, grep the existing map and pick source posts that are NOT already mapped to another pillar.** Validation: after deploy + Varnish purge, curl-grep each new source for `data-marker="dm-related-<NEW_PILLAR_ID>"` — if it shows the OLD pillar's marker, the entry was overwritten.
+9. **TurboScribe dialog auto-closes after upload completes** if you don't click the submit TRANSCRIBE button promptly (~60s). Result: file is uploaded but NOT queued — the dashboard shows nothing new. Always click submit immediately when the file card shows the blue ✓ check.
+10. **TurboScribe button text "TRANSCRIBE" is CSS-uppercased — JS reads "Transcribe".** Match by snapshot ref `@eN`, not by `textContent === 'TRANSCRIBE'`.
+11. **Telegram message_id is NOT stable per video** — same source video re-cached produces a new file ID (`..404` → `..410` were identical Buyanova HA module 1, transcribed twice, wasted 12 min). This is what Step 0 dup-check guards against. Always check `ffprobe duration` against `published.json` records + TurboScribe dashboard durations before clicking TRANSCRIBE.
+12. **WP REST media metadata POST with `-d "{json}"` fails on Hebrew apostrophes + special chars.** Solution: upload media first (works), then set `_wp_attachment_image_alt` via wp-cli SSH stdin: `echo 'alt text' | drwp "post meta update <media_id> _wp_attachment_image_alt"`.
 
 ---
 
